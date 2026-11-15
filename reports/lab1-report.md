@@ -40,6 +40,7 @@ GitHub репозиторій: [https://github.com/Shin1-gami/booking-system]
 ### API endpoints
 Для взаємодії з backend-частиною розроблено REST API. Основні маршрути:
 1. Користувачі — /api/users
+
 | Метод | Endpoint | Призначення |
 | :--- | :--- | :--- |
 | GET | `/api/users` | Отримання всіх користувачів |
@@ -49,6 +50,7 @@ GitHub репозиторій: [https://github.com/Shin1-gami/booking-system]
 | DELETE | `/api/users/:id` | Видалення користувача |
 
 2. Категорії — /api/categories
+
 | Метод | Endpoint | Призначення |
 | :--- | :--- | :--- |
 | GET | `/api/categories` | Отримання всіх категорій |
@@ -58,6 +60,7 @@ GitHub репозиторій: [https://github.com/Shin1-gami/booking-system]
 | DELETE | `/api/categories/:id` | Видалення категорії |
 
 3. Ресурси — /api/resources
+
 | Метод | Endpoint | Призначення |
 | :--- | :--- | :--- |
 | GET | `/api/resources` | Отримання всіх ресурсів |
@@ -67,6 +70,7 @@ GitHub репозиторій: [https://github.com/Shin1-gami/booking-system]
 | DELETE | `/api/resources/:id` | Видалення ресурсу |
 
 4. Бронювання — /api/bookings
+
 | Метод | Endpoint | Призначення |
 | :--- | :--- | :--- |
 | GET | `/api/bookings` | Отримання всіх бронювань |
@@ -76,6 +80,7 @@ GitHub репозиторій: [https://github.com/Shin1-gami/booking-system]
 | DELETE | `/api/bookings/:id` | Видалення бронювання |
 
 5. Сповіщення — /api/notifications
+
 | Метод | Endpoint | Призначення |
 | :--- | :--- | :--- |
 | GET | `/api/notifications?userId=1` | Отримання сповіщень користувача |
@@ -84,6 +89,7 @@ GitHub репозиторій: [https://github.com/Shin1-gami/booking-system]
 | DELETE | `/api/notifications/:id` | Видалення сповіщення |
 
 6. Обране — /api/favorites
+
 | Метод | Endpoint | Призначення |
 | :--- | :--- | :--- |
 | GET | `/api/favorites?userId=1` | Отримання обраних ресурсів |
@@ -155,27 +161,35 @@ booking-system:
 
 ## Скріншоти тестування
 Скріншот 1. Структура проєкту
+
 ![alt text](image.png)
 
 Скріншот 2. База даних PostgreSQL
+
 ![alt text](image-1.png)
 
 Скріншот 3. GET-запит
+
 ![alt text](image-2.png)
 
 Скріншот 4. POST-запит
+
 ![alt text](image-3.png)
 
 Скріншот 5. Перевірка отримання неіснуючого користувача
+
 ![alt text](image-4.png)
 
 Скріншот 6. Перевірка повторного створення користувача
+
 ![alt text](image-5.png)
 
 Скріншот 7. Перевірка бронювання на зайнятий час
+
 ![alt text](image-6.png)
 
 Скріншот 8. Перевірка неправильного формату пошти
+
 ![alt text](image-7.png)
 
 
