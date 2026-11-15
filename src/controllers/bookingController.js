@@ -1,9 +1,15 @@
+
 import { prisma } from "../config/prisma.js";
 
-// Отримати всі бронювання
+// Отримання бронювань
 export async function getBookings(req, res, next) {
   try {
+    const where = req.user.role === "ADMIN"
+      ? {}
+      : { userId: req.user.userId };
+
     const bookings = await prisma.booking.findMany({
+      where,
       include: {
         user: {
           select: {
@@ -25,10 +31,16 @@ export async function getBookings(req, res, next) {
   }
 }
 
-// Отримати бронювання за ID
+// Отримання бронювання за ID
 export async function getBookingById(req, res, next) {
   try {
     const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({
+        message: "Некоректний ID бронювання"
+      });
+    }
 
     const booking = await prisma.booking.findUnique({
       where: { id },
@@ -50,18 +62,26 @@ export async function getBookingById(req, res, next) {
       });
     }
 
+    if (
+      booking.userId !== req.user.userId &&
+      req.user.role !== "ADMIN"
+    ) {
+      return res.status(403).json({
+        message: "Немає доступу до цього бронювання"
+      });
+    }
+
     res.json(booking);
   } catch (error) {
     next(error);
   }
 }
 
-// Створити бронювання
+// Створення бронювання
 export async function createBooking(req, res, next) {
   try {
-    const { userId, resourceId, startTime, endTime } = req.body;
+    const { resourceId, startTime, endTime } = req.body;
 
-    // Перевірка наявності ресурсу
     const resource = await prisma.resource.findUnique({
       where: { id: resourceId }
     });
@@ -72,18 +92,6 @@ export async function createBooking(req, res, next) {
       });
     }
 
-    // Перевірка користувача
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        message: "Користувача не знайдено"
-      });
-    }
-
-    // Перевірка зайнятості ресурсу
     const conflict = await prisma.booking.findFirst({
       where: {
         resourceId,
@@ -107,7 +115,7 @@ export async function createBooking(req, res, next) {
 
     const booking = await prisma.booking.create({
       data: {
-        userId,
+        userId: req.user.userId,
         resourceId,
         startTime,
         endTime
@@ -120,10 +128,16 @@ export async function createBooking(req, res, next) {
   }
 }
 
-// Оновити бронювання
+// Оновлення бронювання
 export async function updateBooking(req, res, next) {
   try {
     const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({
+        message: "Некоректний ID бронювання"
+      });
+    }
 
     const existing = await prisma.booking.findUnique({
       where: { id }
@@ -132,6 +146,20 @@ export async function updateBooking(req, res, next) {
     if (!existing) {
       return res.status(404).json({
         message: "Бронювання не знайдено"
+      });
+    }
+
+    const isAdmin = req.user.role === "ADMIN";
+
+    if (existing.userId !== req.user.userId && !isAdmin) {
+      return res.status(403).json({
+        message: "Немає прав для зміни цього бронювання"
+      });
+    }
+
+    if (req.body.status && !isAdmin) {
+      return res.status(403).json({
+        message: "Змінювати статус бронювання може лише адміністратор"
       });
     }
 
@@ -148,7 +176,9 @@ export async function updateBooking(req, res, next) {
       where: {
         id: { not: id },
         resourceId: existing.resourceId,
-        status: { in: ["PENDING", "CONFIRMED"] },
+        status: {
+          in: ["PENDING", "CONFIRMED"]
+        },
         startTime: { lt: endTime },
         endTime: { gt: startTime }
       }
@@ -162,7 +192,11 @@ export async function updateBooking(req, res, next) {
 
     const booking = await prisma.booking.update({
       where: { id },
-      data: req.body
+      data: {
+        ...(req.body.startTime && { startTime }),
+        ...(req.body.endTime && { endTime }),
+        ...(isAdmin && req.body.status && { status: req.body.status })
+      }
     });
 
     res.json(booking);
@@ -171,10 +205,35 @@ export async function updateBooking(req, res, next) {
   }
 }
 
-// Видалити бронювання
+// Видалення бронювання
 export async function deleteBooking(req, res, next) {
   try {
     const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({
+        message: "Некоректний ID бронювання"
+      });
+    }
+
+    const existing = await prisma.booking.findUnique({
+      where: { id }
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        message: "Бронювання не знайдено"
+      });
+    }
+
+    if (
+      existing.userId !== req.user.userId &&
+      req.user.role !== "ADMIN"
+    ) {
+      return res.status(403).json({
+        message: "Немає прав для видалення цього бронювання"
+      });
+    }
 
     await prisma.booking.delete({
       where: { id }

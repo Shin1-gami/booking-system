@@ -1,7 +1,7 @@
+
 import { z } from "zod";
 
 export const createBookingSchema = z.object({
-  userId: z.number().int().positive(),
   resourceId: z.number().int().positive(),
   startTime: z.coerce.date(),
   endTime: z.coerce.date()
@@ -22,4 +22,9 @@ export const updateBookingSchema = z.object({
     "CANCELLED",
     "COMPLETED"
   ]).optional()
-}).refine(data => Object.keys(data).length > 0);
+}).refine(
+  data => Object.keys(data).length > 0,
+  {
+    message: "Необхідно передати хоча б одне поле"
+  }
+);

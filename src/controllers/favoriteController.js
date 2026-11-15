@@ -1,15 +1,15 @@
+
 import { prisma } from "../config/prisma.js";
+
+// Перевірка коректності ID ресурсу
+function validateResourceId(id) {
+  return Number.isInteger(id) && id > 0;
+}
 
 // Отримати обрані ресурси користувача
 export async function getFavorites(req, res, next) {
   try {
-    const userId = Number(req.query.userId);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(400).json({
-        message: "Необхідно вказати коректний userId"
-      });
-    }
+    const userId = req.user.userId;
 
     const favorites = await prisma.favorite.findMany({
       where: { userId },
@@ -19,6 +19,9 @@ export async function getFavorites(req, res, next) {
             category: true
           }
         }
+      },
+      orderBy: {
+        createdAt: "desc"
       }
     });
 
@@ -31,7 +34,8 @@ export async function getFavorites(req, res, next) {
 // Додати ресурс до обраного
 export async function createFavorite(req, res, next) {
   try {
-    const { userId, resourceId } = req.body;
+    const userId = req.user.userId;
+    const { resourceId } = req.body;
 
     const favorite = await prisma.favorite.create({
       data: {
@@ -44,7 +48,7 @@ export async function createFavorite(req, res, next) {
     });
 
     res.status(201).json({
-      message: "Ресурс додано до обраного",
+      message: "Ресурс успішно додано до обраного",
       favorite
     });
   } catch (error) {
@@ -55,15 +59,27 @@ export async function createFavorite(req, res, next) {
 // Видалити ресурс з обраного
 export async function deleteFavorite(req, res, next) {
   try {
-    const userId = Number(req.query.userId);
+    const userId = req.user.userId;
     const resourceId = Number(req.params.resourceId);
 
-    if (
-      !Number.isInteger(userId) || userId <= 0 ||
-      !Number.isInteger(resourceId) || resourceId <= 0
-    ) {
+    if (!validateResourceId(resourceId)) {
       return res.status(400).json({
-        message: "Необхідно вказати коректні ID користувача та ресурсу"
+        message: "Некоректний ID ресурсу"
+      });
+    }
+
+    const favorite = await prisma.favorite.findUnique({
+      where: {
+        userId_resourceId: {
+          userId,
+          resourceId
+        }
+      }
+    });
+
+    if (!favorite) {
+      return res.status(404).json({
+        message: "Ресурс не знайдено в обраному"
       });
     }
 
@@ -77,7 +93,7 @@ export async function deleteFavorite(req, res, next) {
     });
 
     res.json({
-      message: "Ресурс видалено з обраного"
+      message: "Ресурс успішно видалено з обраного"
     });
   } catch (error) {
     next(error);
