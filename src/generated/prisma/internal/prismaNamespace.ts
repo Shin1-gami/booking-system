@@ -405,7 +405,8 @@ export const ModelName = {
   Notification: 'Notification',
   Favorite: 'Favorite',
   File: 'File',
-  RefreshToken: 'RefreshToken'
+  RefreshToken: 'RefreshToken',
+  UserEvent: 'UserEvent'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -421,7 +422,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "role" | "user" | "category" | "resource" | "booking" | "notification" | "favorite" | "file" | "refreshToken"
+    modelProps: "role" | "user" | "category" | "resource" | "booking" | "notification" | "favorite" | "file" | "refreshToken" | "userEvent"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1091,6 +1092,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    UserEvent: {
+      payload: Prisma.$UserEventPayload<ExtArgs>
+      fields: Prisma.UserEventFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.UserEventFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.UserEventFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>
+        }
+        findFirst: {
+          args: Prisma.UserEventFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.UserEventFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>
+        }
+        findMany: {
+          args: Prisma.UserEventFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>[]
+        }
+        create: {
+          args: Prisma.UserEventCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>
+        }
+        createMany: {
+          args: Prisma.UserEventCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.UserEventCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>[]
+        }
+        delete: {
+          args: Prisma.UserEventDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>
+        }
+        update: {
+          args: Prisma.UserEventUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>
+        }
+        deleteMany: {
+          args: Prisma.UserEventDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.UserEventUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.UserEventUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>[]
+        }
+        upsert: {
+          args: Prisma.UserEventUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserEventPayload>
+        }
+        aggregate: {
+          args: Prisma.UserEventAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateUserEvent>
+        }
+        groupBy: {
+          args: Prisma.UserEventGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserEventGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.UserEventCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserEventCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -1190,6 +1265,7 @@ export const NotificationScalarFieldEnum = {
   userId: 'userId',
   message: 'message',
   isRead: 'isRead',
+  priority: 'priority',
   createdAt: 'createdAt'
 } as const
 
@@ -1230,12 +1306,31 @@ export const RefreshTokenScalarFieldEnum = {
 export type RefreshTokenScalarFieldEnum = (typeof RefreshTokenScalarFieldEnum)[keyof typeof RefreshTokenScalarFieldEnum]
 
 
+export const UserEventScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  event: 'event',
+  payload: 'payload',
+  createdAt: 'createdAt',
+  acknowledgedAt: 'acknowledgedAt'
+} as const
+
+export type UserEventScalarFieldEnum = (typeof UserEventScalarFieldEnum)[keyof typeof UserEventScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
 } as const
 
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
+
+
+export const JsonNullValueInput = {
+  JsonNull: JsonNull
+} as const
+
+export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
 
 
 export const QueryMode = {
@@ -1252,6 +1347,15 @@ export const NullsOrder = {
 } as const
 
 export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
 
 
 
@@ -1334,6 +1438,34 @@ export type ListEnumBookingStatusFieldRefInput<$PrismaModel> = FieldRefInputType
  * Reference to a field of type 'Boolean'
  */
 export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
+    
+
+
+/**
+ * Reference to a field of type 'NotificationPriority'
+ */
+export type EnumNotificationPriorityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'NotificationPriority'>
+    
+
+
+/**
+ * Reference to a field of type 'NotificationPriority[]'
+ */
+export type ListEnumNotificationPriorityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'NotificationPriority[]'>
+    
+
+
+/**
+ * Reference to a field of type 'Json'
+ */
+export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Json'>
+    
+
+
+/**
+ * Reference to a field of type 'QueryMode'
+ */
+export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
     
 
 /**
@@ -1496,6 +1628,7 @@ export type GlobalOmitConfig = {
   favorite?: Prisma.FavoriteOmit
   file?: Prisma.FileOmit
   refreshToken?: Prisma.RefreshTokenOmit
+  userEvent?: Prisma.UserEventOmit
 }
 
 /* Types for Logging */

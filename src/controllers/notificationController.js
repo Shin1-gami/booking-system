@@ -1,5 +1,19 @@
 
 import { prisma } from "../config/prisma.js";
+import { publishUserEvent } from "../utils/eventLogger.js";
+import { createNotification as createNotificationService, createNotificationsBatch } from "../services/notificationService.js";
+
+// Надсилання подій сповіщень конкретному користувачу
+async function emitNotificationEvent(req, userId, event, data) {
+  const io = req.app.get("io");
+
+  await publishUserEvent(
+    io,
+    userId,
+    event,
+    data
+  );
+}
 
 // Перевірка коректності ID
 function validateNotificationId(id) {
@@ -49,22 +63,53 @@ export async function getNotifications(req, res, next) {
 }
 
 // Створити сповіщення
+
 export async function createNotification(req, res, next) {
   try {
-    const { userId, message } = req.body;
+    const { userId, message, priority } = req.body;
 
-    const notification = await prisma.notification.create({
-      data: {
-        userId,
-        message
-      }
+    if (
+      !Number.isInteger(userId) ||
+      userId <= 0 ||
+      typeof message !== "string" ||
+      message.trim().length === 0
+    ) {
+      return res.status(400).json({
+        message: "Некоректні дані сповіщення"
+      });
+    }
+
+    const allowedPriorities = [
+      "LOW",
+      "NORMAL",
+      "HIGH",
+      "URGENT"
+    ];
+
+    if (
+      priority !== undefined &&
+      !allowedPriorities.includes(priority)
+    ) {
+      return res.status(400).json({
+        message: "Некоректний пріоритет сповіщення"
+      });
+    }
+
+    const notification = await createNotificationService({
+      userId,
+      message: message.trim(),
+      priority
     });
 
-    res.status(201).json(notification);
+    res.status(201).json({
+      message: "Сповіщення створено та додано до черги",
+      data: notification
+    });
   } catch (error) {
     next(error);
   }
 }
+
 
 // Оновити сповіщення
 export async function updateNotification(req, res, next) {
@@ -125,6 +170,14 @@ export async function updateNotification(req, res, next) {
       data
     });
 
+    // Повідомляємо користувача про зміну сповіщення
+    await emitNotificationEvent(
+      req,
+      notification.userId,
+      "notification:updated",
+    notification
+    );
+
     res.json(notification);
   } catch (error) {
     next(error);
@@ -165,8 +218,82 @@ export async function deleteNotification(req, res, next) {
       where: { id }
     });
 
+    // Повідомляємо користувача про видалення сповіщення
+    await emitNotificationEvent(
+      req,
+      existingNotification.userId,
+      "notification:deleted",
+      {
+        id: existingNotification.id,
+        userId: existingNotification.userId
+      }
+    );
+
     res.json({
       message: "Сповіщення успішно видалено"
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Пакетне створення сповіщень
+export async function createNotificationsBatchController(req, res, next) {
+  try {
+    const { notifications } = req.body;
+
+    const allowedPriorities = [
+      "LOW",
+      "NORMAL",
+      "HIGH",
+      "URGENT"
+    ];
+
+    // Перевірка масиву
+    if (
+      !Array.isArray(notifications) ||
+      notifications.length === 0 ||
+      notifications.length > 100
+    ) {
+      return res.status(400).json({
+        message: "Потрібно передати від 1 до 100 сповіщень"
+      });
+    }
+
+    // Перевірка кожного сповіщення
+    const invalidNotification = notifications.find((item) => {
+      return (
+        !item ||
+        !Number.isInteger(item.userId) ||
+        item.userId <= 0 ||
+        typeof item.message !== "string" ||
+        item.message.trim().length === 0 ||
+        (
+          item.priority !== undefined &&
+          !allowedPriorities.includes(item.priority)
+        )
+      );
+    });
+
+    if (invalidNotification) {
+      return res.status(400).json({
+        message: "Одне або декілька сповіщень містять некоректні дані"
+      });
+    }
+
+    const normalizedNotifications = notifications.map((item) => ({
+      userId: item.userId,
+      message: item.message.trim(),
+      priority: item.priority ?? "NORMAL"
+    }));
+
+    const createdNotifications =
+      await createNotificationsBatch(normalizedNotifications);
+
+    return res.status(201).json({
+      message: "Пакет сповіщень успішно створено та додано до черги",
+      count: createdNotifications.length,
+      data: createdNotifications
     });
   } catch (error) {
     next(error);

@@ -62,3 +62,8 @@ export type File = Prisma.FileModel
  * 
  */
 export type RefreshToken = Prisma.RefreshTokenModel
+/**
+ * Model UserEvent
+ * 
+ */
+export type UserEvent = Prisma.UserEventModel

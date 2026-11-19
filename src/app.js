@@ -14,10 +14,17 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import favoriteRoutes from "./routes/favoriteRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import fileRoutes from "./routes/fileRoutes.js";
+import metricsRoutes from "./routes/metricsRoutes.js";
+import healthRoutes from "./routes/healthRoutes.js";
 
 import { errorHandler } from "./middleware/errorHandler.js";
+import { httpLogger } from "./middleware/httpLogger.js";
+import { metricsMiddleware } from "./middleware/metricsMiddleware.js";
+import { notFound } from "./middleware/notFound.js";
 
 const app = express();
+app.use(httpLogger);
+app.use(metricsMiddleware);
 
 // Обмеження кількості запитів
 const apiLimiter = rateLimit({
@@ -34,6 +41,8 @@ const apiLimiter = rateLimit({
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+
+app.use("/health", healthRoutes);
 
 // Обмеження запитів для API
 app.use("/api", apiLimiter);
@@ -57,8 +66,15 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/favorites", favoriteRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/files", fileRoutes);
+app.use("/metrics", metricsRoutes);
 
 // Обробка помилок
+app.use(errorHandler);
+
+// Обробка неіснуючих маршрутів
+app.use(notFound);
+
+// Централізована обробка помилок
 app.use(errorHandler);
 
 export default app;

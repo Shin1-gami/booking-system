@@ -1,6 +1,13 @@
 
 import { prisma } from "../config/prisma.js";
 
+import {
+  getCache,
+  setCache,
+  getCacheVersion,
+  invalidateCache
+} from "../utils/cache.js";
+
 // Перевірка коректності ID категорії
 function validateCategoryId(id) {
   return Number.isInteger(id) && id > 0;
@@ -9,13 +16,34 @@ function validateCategoryId(id) {
 // Отримати всі категорії
 export async function getCategories(req, res, next) {
   try {
+    const cacheVersion = await getCacheVersion("categories");
+    const cacheKey = `cache:categories:${cacheVersion}:all`;
+
+    // Перевірка Redis-кешу
+    const cachedCategories = await getCache(cacheKey);
+
+    if (cachedCategories !== null) {
+      return res.json(cachedCategories);
+    }
+
+    // Отримання категорій із бази даних
     const categories = await prisma.category.findMany({
-      include: {
+      select: {
+        id: true,
+        name: true,
         _count: {
-          select: { resources: true }
+          select: {
+            resources: true
+          }
         }
+      },
+      orderBy: {
+        name: "asc"
       }
     });
+
+    // Збереження результату в Redis-кеші
+    await setCache(cacheKey, categories, 60);
 
     res.json(categories);
   } catch (error) {
@@ -34,6 +62,15 @@ export async function getCategoryById(req, res, next) {
       });
     }
 
+    const cacheVersion = await getCacheVersion("categories");
+const cacheKey = `cache:categories:${cacheVersion}:item:${id}`;
+
+const cachedCategory = await getCache(cacheKey);
+
+if (cachedCategory !== null) {
+  return res.json(cachedCategory);
+}
+
     const category = await prisma.category.findUnique({
       where: { id },
       include: {
@@ -46,6 +83,8 @@ export async function getCategoryById(req, res, next) {
         message: "Категорію не знайдено"
       });
     }
+
+    await setCache(cacheKey, category, 60);
 
     res.json(category);
   } catch (error) {
@@ -64,6 +103,8 @@ export async function createCategory(req, res, next) {
         ...(description !== undefined && { description })
       }
     });
+
+    await invalidateCache("categories");
 
     res.status(201).json(category);
   } catch (error) {
@@ -105,6 +146,9 @@ export async function updateCategory(req, res, next) {
       data
     });
 
+    await invalidateCache("categories");
+await invalidateCache("resources");
+
     res.json(category);
   } catch (error) {
     next(error);
@@ -125,6 +169,9 @@ export async function deleteCategory(req, res, next) {
     await prisma.category.delete({
       where: { id }
     });
+
+    await invalidateCache("categories");
+await invalidateCache("resources");
 
     res.json({
       message: "Категорію успішно видалено"

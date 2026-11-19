@@ -59,7 +59,8 @@ export const ModelName = {
   Notification: 'Notification',
   Favorite: 'Favorite',
   File: 'File',
-  RefreshToken: 'RefreshToken'
+  RefreshToken: 'RefreshToken',
+  UserEvent: 'UserEvent'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -138,6 +139,7 @@ export const NotificationScalarFieldEnum = {
   userId: 'userId',
   message: 'message',
   isRead: 'isRead',
+  priority: 'priority',
   createdAt: 'createdAt'
 } as const
 
@@ -178,12 +180,31 @@ export const RefreshTokenScalarFieldEnum = {
 export type RefreshTokenScalarFieldEnum = (typeof RefreshTokenScalarFieldEnum)[keyof typeof RefreshTokenScalarFieldEnum]
 
 
+export const UserEventScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  event: 'event',
+  payload: 'payload',
+  createdAt: 'createdAt',
+  acknowledgedAt: 'acknowledgedAt'
+} as const
+
+export type UserEventScalarFieldEnum = (typeof UserEventScalarFieldEnum)[keyof typeof UserEventScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
 } as const
 
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
+
+
+export const JsonNullValueInput = {
+  JsonNull: JsonNull
+} as const
+
+export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
 
 
 export const QueryMode = {
@@ -200,4 +221,13 @@ export const NullsOrder = {
 } as const
 
 export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
 

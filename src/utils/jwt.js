@@ -24,7 +24,7 @@ export function generateAccessToken(userId, role) {
     { userId, role },
     getSecret('JWT_SECRET'),
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || '15m'
+      expiresIn: process.env.JWT_EXPIRES_IN || '1h'
     }
   );
 }

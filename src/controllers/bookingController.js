@@ -1,35 +1,113 @@
 
 import { prisma } from "../config/prisma.js";
+import { publishUserEvent } from "../utils/eventLogger.js";
 
-// Отримання бронювань
+// Надсилання подій про зміни бронювання через Socket.IO
+async function emitBookingEvent(req, booking, event, extra = {}) {
+  const io = req.app.get("io");
+
+  const payload = {
+    ...booking,
+    ...extra
+  };
+
+  await publishUserEvent(
+    io,
+    booking.userId,
+    event,
+    payload,
+    [
+      `resource:${booking.resourceId}`,
+      `booking:${booking.id}`
+    ]
+  );
+}
+
+// Отримання бронювань із пагінацією
 export async function getBookings(req, res, next) {
   try {
+    // Отримуємо параметри пагінації
+    const page = Number(req.query.page ?? 1);
+    const requestedLimit = Number(req.query.limit ?? 10);
+
+    if (
+    !Number.isInteger(page) ||
+    page < 1 ||
+    !Number.isInteger(requestedLimit) ||
+    requestedLimit < 1
+    ) {
+    return res.status(400).json({
+    message: "Некоректні параметри пагінації"
+      });
+    }
+
+    const limit = Math.min(requestedLimit, 100);
+
+    const skip = (page - 1) * limit;
+
+    // Адміністратор бачить усі бронювання,
+    // звичайний користувач — лише власні
     const where = req.user.role === "ADMIN"
       ? {}
       : { userId: req.user.userId };
 
-    const bookings = await prisma.booking.findMany({
-      where,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true
+    // Отримуємо дані та загальну кількість записів
+    const [bookings, total] = await prisma.$transaction([
+      prisma.booking.findMany({
+        where,
+        select: {
+          id: true,
+          userId: true,
+          resourceId: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          createdAt: true,
+
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+
+          resource: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              location: true,
+              categoryId: true
+            }
           }
         },
-        resource: true
-      },
-      orderBy: {
-        createdAt: "desc"
+        orderBy: {
+          createdAt: "desc"
+        },
+        skip,
+        take: limit
+      }),
+
+      prisma.booking.count({ where })
+    ]);
+
+    res.json({
+      data: bookings,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPreviousPage: page > 1
       }
     });
-
-    res.json(bookings);
   } catch (error) {
     next(error);
   }
 }
+
 
 // Отримання бронювання за ID
 export async function getBookingById(req, res, next) {
@@ -78,6 +156,7 @@ export async function getBookingById(req, res, next) {
 }
 
 // Створення бронювання
+
 export async function createBooking(req, res, next) {
   try {
     const { resourceId, startTime, endTime } = req.body;
@@ -122,11 +201,15 @@ export async function createBooking(req, res, next) {
       }
     });
 
+    // Повідомляємо всіх зацікавлених у ресурсі користувачів
+    await emitBookingEvent(req, booking, "booking:created");
+
     res.status(201).json(booking);
   } catch (error) {
     next(error);
   }
 }
+
 
 // Оновлення бронювання
 export async function updateBooking(req, res, next) {
@@ -166,7 +249,7 @@ export async function updateBooking(req, res, next) {
     const startTime = req.body.startTime ?? existing.startTime;
     const endTime = req.body.endTime ?? existing.endTime;
 
-    if (startTime >= endTime) {
+    if (new Date(startTime) >= new Date(endTime)) {
       return res.status(400).json({
         message: "Дата завершення повинна бути пізніше дати початку"
       });
@@ -199,6 +282,14 @@ export async function updateBooking(req, res, next) {
       }
     });
 
+    // Якщо адміністратор скасував бронювання
+    if (booking.status === "CANCELLED" &&
+        existing.status !== "CANCELLED") {
+      await emitBookingEvent(req, booking, "booking:cancelled");
+    } else {
+      await emitBookingEvent(req, booking, "booking:updated");
+    }
+
     res.json(booking);
   } catch (error) {
     next(error);
@@ -206,6 +297,7 @@ export async function updateBooking(req, res, next) {
 }
 
 // Видалення бронювання
+
 export async function deleteBooking(req, res, next) {
   try {
     const id = Number(req.params.id);
@@ -239,6 +331,11 @@ export async function deleteBooking(req, res, next) {
       where: { id }
     });
 
+    // Повідомляємо клієнтів після успішного видалення
+    await emitBookingEvent(req, existing, "booking:cancelled", {
+      deleted: true
+    });
+
     res.json({
       message: "Бронювання успішно видалено"
     });
@@ -246,3 +343,4 @@ export async function deleteBooking(req, res, next) {
     next(error);
   }
 }
+

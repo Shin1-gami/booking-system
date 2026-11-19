@@ -1,6 +1,13 @@
 
 import { prisma } from "../config/prisma.js";
 
+import {
+  getCache,
+  setCache,
+  getCacheVersion,
+  invalidateCache
+} from "../utils/cache.js";
+
 // Отримати ресурси з пошуком, фільтрацією та пагінацією
 export async function getResources(req, res, next) {
   try {
@@ -156,38 +163,69 @@ export async function getResources(req, res, next) {
       }
     }
 
+// Формування ключа кешу з урахуванням версії та параметрів запиту
+const cacheVersion = await getCacheVersion("resources");
+
+const cacheKey =
+  `cache:resources:${cacheVersion}:${req.originalUrl}`;
+
+// Перевірка наявності даних у Redis
+const cachedData = await getCache(cacheKey);
+
+if (cachedData !== null) {
+  return res.json(cachedData);
+}
+
     // Кількість пропущених записів
     const skip = (pageNumber - 1) * limitNumber;
 
     // Отримання ресурсів і загальної кількості
     const [resources, total] = await Promise.all([
-      prisma.resource.findMany({
-        where,
-        include: {
-          category: true
-        },
-        orderBy: {
-          [sortBy]: order
-        },
-        skip,
-        take: limitNumber
-      }),
-
-      prisma.resource.count({
-        where
-      })
-    ]);
-
-    // Відповідь сервера
-    res.json({
-      data: resources,
-      pagination: {
-        total,
-        page: pageNumber,
-        limit: limitNumber,
-        totalPages: Math.ceil(total / limitNumber)
+  prisma.resource.findMany({
+    where,
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      location: true,
+      price: true,
+      categoryId: true,
+      createdAt: true,
+      category: {
+        select: {
+          id: true,
+          name: true
+        }
       }
-    });
+    },
+    skip,
+    take: limitNumber,
+    orderBy: {
+      [sortBy]: order
+    }
+  }),
+
+  prisma.resource.count({
+    where
+  })
+]);
+
+    // Формування відповіді
+const responseData = {
+  data: resources,
+  pagination: {
+    total,
+    page: pageNumber,
+    limit: limitNumber,
+    totalPages: Math.ceil(total / limitNumber)
+  }
+};
+
+// Збереження результату в Redis на 60 секунд
+await setCache(cacheKey, responseData, 60);
+
+// Відправлення відповіді
+res.json(responseData);
 
   } catch (error) {
     next(error);
@@ -205,18 +243,45 @@ export async function getResourceById(req, res, next) {
       });
     }
 
+    // Отримання версії кешу
+const cacheVersion = await getCacheVersion("resources");
+
+const cacheKey =
+  `cache:resources:${cacheVersion}:item:${id}`;
+
+// Перевірка кешу
+const cachedResource = await getCache(cacheKey);
+
+if (cachedResource !== null) {
+  return res.json(cachedResource);
+}
+
     const resource = await prisma.resource.findUnique({
-      where: { id },
-      include: {
-        category: true
+  where: { id },
+  select: {
+    id: true,
+    name: true,
+    description: true,
+    location: true,
+    price: true,
+    categoryId: true,
+    createdAt: true,
+    category: {
+      select: {
+        id: true,
+        name: true
       }
-    });
+    }
+  }
+});
 
     if (!resource) {
       return res.status(404).json({
         message: "Ресурс не знайдено"
       });
     }
+
+    await setCache(cacheKey, resource, 60);
 
     res.json(resource);
   } catch (error) {
@@ -233,6 +298,10 @@ export async function createResource(req, res, next) {
         category: true
       }
     });
+
+    await invalidateCache("resources");
+    await invalidateCache("categories");
+    
 
     res.status(201).json(resource);
   } catch (error) {
@@ -253,6 +322,9 @@ export async function updateResource(req, res, next) {
       }
     });
 
+    await invalidateCache("resources");
+    await invalidateCache("categories");
+
     res.json(resource);
   } catch (error) {
     next(error);
@@ -267,6 +339,9 @@ export async function deleteResource(req, res, next) {
     await prisma.resource.delete({
       where: { id }
     });
+
+    await invalidateCache("resources");
+    await invalidateCache("categories");
 
     res.json({
       message: "Ресурс успішно видалено"

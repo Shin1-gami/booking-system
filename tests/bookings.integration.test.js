@@ -193,30 +193,121 @@ test('Перевірка бронювань, CRUD, конфліктів часу
 
     // 13. USER бачить тільки власні бронювання
     const userListResponse = await request(app)
-      .get('/api/bookings')
+      .get('/api/bookings?page=1&limit=10')
       .set('Authorization', `Bearer ${userToken}`);
 
     assert.equal(userListResponse.status, 200);
-    assert.ok(Array.isArray(userListResponse.body));
+
+    assert.ok(Array.isArray(userListResponse.body.data));
+
     assert.ok(
-      userListResponse.body.some(item => item.id === firstBooking.id)
+      userListResponse.body.data.some(
+        item => item.id === firstBooking.id
+      )
     );
+
     assert.ok(
-      !userListResponse.body.some(item => item.id === secondBooking.id)
+      !userListResponse.body.data.some(
+        item => item.id === secondBooking.id
+      )
     );
+
+    // Перевірка метаданих пагінації
+    assert.equal(userListResponse.body.pagination.page, 1);
+    assert.equal(userListResponse.body.pagination.limit, 10);
+    assert.ok(userListResponse.body.pagination.total >= 1);
 
     // 14. ADMIN бачить усі бронювання
     const adminListResponse = await request(app)
-      .get('/api/bookings')
+      .get('/api/bookings?page=1&limit=10')
       .set('Authorization', `Bearer ${adminToken}`);
 
     assert.equal(adminListResponse.status, 200);
+
+    assert.ok(Array.isArray(adminListResponse.body.data));
+
     assert.ok(
-      adminListResponse.body.some(item => item.id === firstBooking.id)
+      adminListResponse.body.data.some(
+        item => item.id === firstBooking.id
+      )
     );
+
     assert.ok(
-      adminListResponse.body.some(item => item.id === secondBooking.id)
+      adminListResponse.body.data.some(
+        item => item.id === secondBooking.id
+      )
     );
+
+
+    // Перевірка пагінації: перша сторінка
+    const adminPage1Response = await request(app)
+      .get('/api/bookings?page=1&limit=1')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    assert.equal(adminPage1Response.status, 200);
+    assert.ok(adminPage1Response.body.data.length <= 1);
+    assert.equal(adminPage1Response.body.pagination.page, 1);
+    assert.equal(adminPage1Response.body.pagination.limit, 1);
+    assert.equal(
+      adminPage1Response.body.pagination.hasPreviousPage,
+      false
+    );
+    assert.equal(
+      adminPage1Response.body.pagination.hasNextPage,
+      true
+    );
+
+    // Перевірка пагінації: друга сторінка
+    const adminPage2Response = await request(app)
+      .get('/api/bookings?page=2&limit=1')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    assert.equal(adminPage2Response.status, 200);
+    assert.ok(adminPage2Response.body.data.length <= 1);
+    assert.equal(adminPage2Response.body.pagination.page, 2);
+    assert.equal(adminPage2Response.body.pagination.limit, 1);
+    assert.equal(
+      adminPage2Response.body.pagination.hasPreviousPage,
+      true
+    );
+
+    // Перевірка некоректного номера сторінки
+    const invalidPageResponse = await request(app)
+      .get('/api/bookings?page=0')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    assert.equal(invalidPageResponse.status, 400);
+
+    // Перевірка некоректного ліміту
+    const invalidLimitResponse = await request(app)
+      .get('/api/bookings?limit=0')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    assert.equal(invalidLimitResponse.status, 400);
+
+    // Перевірка текстового номера сторінки
+    const textPageResponse = await request(app)
+      .get('/api/bookings?page=abc')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    assert.equal(textPageResponse.status, 400);
+
+    // Перевірка текстового ліміту
+    const textLimitResponse = await request(app)
+      .get('/api/bookings?limit=abc')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    assert.equal(textLimitResponse.status, 400);
+
+    // Перевірка максимального ліміту
+    const maxLimitResponse = await request(app)
+      .get('/api/bookings?page=1&limit=200')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    assert.equal(maxLimitResponse.status, 200);
+    assert.equal(maxLimitResponse.body.pagination.limit, 100);
+    assert.ok(maxLimitResponse.body.data.length <= 100);
+
 
     // 15. Перегляд власного бронювання
     const ownBookingResponse = await request(app)

@@ -4,6 +4,7 @@ import { Router } from "express";
 import {
   getNotifications,
   createNotification,
+  createNotificationsBatchController,
   updateNotification,
   deleteNotification
 } from "../controllers/notificationController.js";
@@ -39,7 +40,7 @@ const router = Router();
  *         name: userId
  *         schema:
  *           type: integer
- *         description: ID користувача (лише для адміністратора)
+ *         description: ID користувача (лише для адміністратора)true
  *     responses:
  *       200:
  *         description: Список сповіщень успішно отримано
@@ -84,6 +85,58 @@ router.post(
   authorize("ADMIN"),
   validate(createNotificationSchema),
   createNotification
+);
+
+/**
+ * @swagger
+ * /api/notifications/batch:
+ *   post:
+ *     summary: Пакетне створення сповіщень
+ *     description: Створює до 100 сповіщень за один запит та додає їх до черги BullMQ.
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - notifications
+ *             properties:
+ *               notifications:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - userId
+ *                     - message
+ *                   properties:
+ *                     userId:
+ *                       type: integer
+ *                     message:
+ *                       type: string
+ *                     priority:
+ *                       type: string
+ *                       enum: [LOW, NORMAL, HIGH, URGENT]
+ *     responses:
+ *       201:
+ *         description: Пакет сповіщень успішно створено
+ *       400:
+ *         description: Некоректні дані
+ *       401:
+ *         description: Необхідна авторизація
+ *       403:
+ *         description: Недостатньо прав
+ */
+router.post(
+  "/batch",
+  authenticate,
+  authorize("ADMIN"),
+  createNotificationsBatchController
 );
 
 /**

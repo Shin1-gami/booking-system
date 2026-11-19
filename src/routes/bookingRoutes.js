@@ -26,20 +26,84 @@ const router = Router();
  *   description: Управління бронюваннями ресурсів
  */
 
+
 /**
  * @swagger
  * /api/bookings:
  *   get:
- *     summary: Отримати список власних бронювань
+ *     summary: Отримати список бронювань із пагінацією
  *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Номер сторінки
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Кількість бронювань на сторінці
  *     responses:
  *       200:
  *         description: Список бронювань успішно отримано
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       userId:
+ *                         type: integer
+ *                       resourceId:
+ *                         type: integer
+ *                       startTime:
+ *                         type: string
+ *                         format: date-time
+ *                       endTime:
+ *                         type: string
+ *                         format: date-time
+ *                       status:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     hasNextPage:
+ *                       type: boolean
+ *                     hasPreviousPage:
+ *                       type: boolean
+ *       400:
+ *         description: Некоректні параметри пагінації
  *       401:
  *         description: Необхідна авторизація
  */
+
 router.get("/", authenticate, getBookings);
 
 /**
@@ -116,12 +180,14 @@ router.post(
   createBooking
 );
 
+
 /**
  * @swagger
  * /api/bookings/{id}:
  *   put:
  *     summary: Оновити власне бронювання
- *     tags: [Bookings]
+ *     tags:
+ *       - Bookings
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -130,6 +196,30 @@ router.post(
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             minProperties: 1
+ *             properties:
+ *               startTime:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2026-12-20T12:00:00.000Z"
+ *               endTime:
+ *                 type: string
+ *                 format: date-time
+ *                 example: "2026-12-20T13:00:00.000Z"
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                   - PENDING
+ *                   - CONFIRMED
+ *                   - CANCELLED
+ *                   - COMPLETED
+ *                 example: CONFIRMED
  *     responses:
  *       200:
  *         description: Бронювання успішно оновлено
@@ -144,6 +234,8 @@ router.post(
  *       409:
  *         description: Конфлікт бронювання
  */
+
+
 router.put(
   "/:id",
   authenticate,

@@ -39,6 +39,7 @@ model User {
   updatedAt     DateTime       @updatedAt
   files         File[]
   refreshTokens RefreshToken[]
+  eventLogs     UserEvent[]
 }
 
 model Category {
@@ -58,6 +59,11 @@ model Resource {
   bookings    Booking[]
   favorites   Favorite[]
   createdAt   DateTime   @default(now())
+
+  @@index([categoryId, createdAt])
+  @@index([price])
+  @@index([name])
+  @@index([createdAt])
 }
 
 model Booking {
@@ -70,15 +76,31 @@ model Booking {
   user       User          @relation(fields: [userId], references: [id])
   resource   Resource      @relation(fields: [resourceId], references: [id])
   createdAt  DateTime      @default(now())
+
+  // Індекс для отримання бронювань користувача за датою створення
+  @@index([userId, createdAt])
+  // Індекс для пошуку конфліктів бронювання ресурсу
+  @@index([resourceId, status, startTime])
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement())
+  id        Int                  @id @default(autoincrement())
   userId    Int
   message   String
-  isRead    Boolean  @default(false)
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
+  isRead    Boolean              @default(false)
+  priority  NotificationPriority @default(NORMAL)
+  user      User                 @relation(fields: [userId], references: [id])
+  createdAt DateTime             @default(now())
+
+  @@index([userId, createdAt])
+  @@index([priority, createdAt])
 }
 
 model Favorite {
@@ -107,8 +129,8 @@ model File {
 }
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
-  tokenHash String   @unique
+  id        Int       @id @default(autoincrement())
+  tokenHash String    @unique
   userId    Int
   expiresAt DateTime
   revokedAt DateTime?
@@ -116,4 +138,17 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model UserEvent {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  event          String
+  payload        Json
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([userId, id])
+  @@index([createdAt])
 }
