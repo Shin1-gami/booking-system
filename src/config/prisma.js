@@ -18,3 +18,5 @@ export const prisma = new PrismaClient({
       ? ["warn", "error"]
       : ["error"]
 });
+
+export default prisma;

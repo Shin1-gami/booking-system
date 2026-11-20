@@ -1,182 +1,133 @@
+import * as prismaModule from '../config/prisma.js';
+import * as redisModule from '../config/redis.js';
 
-import { prisma } from "../config/prisma.js";
+const prisma = prismaModule.prisma || prismaModule.default;
+const redisClient = redisModule.redisClient || redisModule.default;
 
-import {
-  getCache,
-  setCache,
-  getCacheVersion,
-  invalidateCache
-} from "../utils/cache.js";
+const CACHE_VERSION_KEY = 'cache:categories:version';
+const CACHE_TTL_SECONDS = 300;
 
-// Перевірка коректності ID категорії
-function validateCategoryId(id) {
-  return Number.isInteger(id) && id > 0;
-}
+const parseId = (rawId) => (/^\d+$/.test(String(rawId)) ? Number(rawId) : String(rawId));
 
-// Отримати всі категорії
-export async function getCategories(req, res, next) {
+const bumpCategoriesCacheVersion = async () => {
   try {
-    const cacheVersion = await getCacheVersion("categories");
-    const cacheKey = `cache:categories:${cacheVersion}:all`;
+    if (redisClient?.isOpen) {
+      await redisClient.incr(CACHE_VERSION_KEY);
+    }
+  } catch {
+    // Ігноруємо збій кешу, щоб не блокувати основну операцію БД
+  }
+};
 
-    // Перевірка Redis-кешу
-    const cachedCategories = await getCache(cacheKey);
-
-    if (cachedCategories !== null) {
-      return res.json(cachedCategories);
+export const getAllCategories = async (req, res, next) => {
+  try {
+    let version = '1';
+    if (redisClient?.isOpen) {
+      version = (await redisClient.get(CACHE_VERSION_KEY)) || '1';
+      const cached = await redisClient.get(`cache:categories:v${version}:all`);
+      if (cached) {
+        return res.status(200).json(JSON.parse(cached));
+      }
     }
 
-    // Отримання категорій із бази даних
     const categories = await prisma.category.findMany({
-      select: {
-        id: true,
-        name: true,
+      orderBy: { name: 'asc' },
+      include: {
         _count: {
-          select: {
-            resources: true
-          }
-        }
+          select: { resources: true },
+        },
       },
-      orderBy: {
-        name: "asc"
-      }
     });
 
-    // Збереження результату в Redis-кеші
-    await setCache(cacheKey, categories, 60);
-
-    res.json(categories);
-  } catch (error) {
-    next(error);
-  }
-}
-
-// Отримати категорію за ID
-export async function getCategoryById(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-
-    if (!validateCategoryId(id)) {
-      return res.status(400).json({
-        message: "Некоректний ID категорії"
-      });
+    if (redisClient?.isOpen) {
+      await redisClient.setEx(
+        `cache:categories:v${version}:all`,
+        CACHE_TTL_SECONDS,
+        JSON.stringify(categories)
+      );
     }
 
-    const cacheVersion = await getCacheVersion("categories");
-const cacheKey = `cache:categories:${cacheVersion}:item:${id}`;
+    return res.status(200).json(categories);
+  } catch (err) {
+    return next(err);
+  }
+};
 
-const cachedCategory = await getCache(cacheKey);
-
-if (cachedCategory !== null) {
-  return res.json(cachedCategory);
-}
-
+export const getCategoryById = async (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
     const category = await prisma.category.findUnique({
       where: { id },
       include: {
-        resources: true
-      }
+        _count: {
+          select: { resources: true },
+        },
+      },
     });
 
     if (!category) {
       return res.status(404).json({
-        message: "Категорію не знайдено"
+        error: 'Категорію не знайдено',
+        message: 'Категорію не знайдено',
       });
     }
 
-    await setCache(cacheKey, category, 60);
-
-    res.json(category);
-  } catch (error) {
-    next(error);
+    return res.status(200).json(category);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
-// Створити категорію
-export async function createCategory(req, res, next) {
+export const createCategory = async (req, res, next) => {
   try {
-    const { name, description } = req.body;
+    const { name } = req.body;
 
     const category = await prisma.category.create({
-      data: {
-        name,
-        ...(description !== undefined && { description })
-      }
+      data: { name },
     });
 
-    await invalidateCache("categories");
+    await bumpCategoriesCacheVersion();
 
-    res.status(201).json(category);
-  } catch (error) {
-    next(error);
+    return res.status(201).json(category);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
-// Оновити категорію
-export async function updateCategory(req, res, next) {
+export const updateCategory = async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-
-    if (!validateCategoryId(id)) {
-      return res.status(400).json({
-        message: "Некоректний ID категорії"
-      });
-    }
-
-    const { name, description } = req.body;
-
-    const data = {};
-
-    if (name !== undefined) {
-      data.name = name;
-    }
-
-    if (description !== undefined) {
-      data.description = description;
-    }
-
-    if (Object.keys(data).length === 0) {
-      return res.status(400).json({
-        message: "Немає даних для оновлення"
-      });
-    }
+    const id = parseId(req.params.id);
+    const { name } = req.body;
 
     const category = await prisma.category.update({
       where: { id },
-      data
+      data: { name },
     });
 
-    await invalidateCache("categories");
-await invalidateCache("resources");
+    await bumpCategoriesCacheVersion();
 
-    res.json(category);
-  } catch (error) {
-    next(error);
+    return res.status(200).json(category);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
-// Видалити категорію
-export async function deleteCategory(req, res, next) {
+export const deleteCategory = async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-
-    if (!validateCategoryId(id)) {
-      return res.status(400).json({
-        message: "Некоректний ID категорії"
-      });
-    }
+    const id = parseId(req.params.id);
 
     await prisma.category.delete({
-      where: { id }
+      where: { id },
     });
 
-    await invalidateCache("categories");
-await invalidateCache("resources");
+    await bumpCategoriesCacheVersion();
 
-    res.json({
-      message: "Категорію успішно видалено"
+    return res.status(200).json({
+      message: 'Категорію успішно видалено',
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    return next(err);
   }
-}
+};
+
+export const getCategories = getAllCategories;

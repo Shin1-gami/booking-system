@@ -1,346 +1,369 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import * as prismaModule from '../config/prisma.js';
 
-import { prisma } from "../config/prisma.js";
-import { publishUserEvent } from "../utils/eventLogger.js";
+const prisma = prismaModule.prisma || prismaModule.default;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Надсилання подій про зміни бронювання через Socket.IO
-async function emitBookingEvent(req, booking, event, extra = {}) {
-  const io = req.app.get("io");
+const loadPublishUserEvent = async () => {
+  const candidates = [
+    '../utils/events.js',
+    '../utils/userEvents.js',
+    '../utils/eventPublisher.js',
+    '../services/eventService.js',
+    '../services/events.js',
+    '../socket/events.js',
+    '../socket/index.js',
+  ];
 
-  const payload = {
-    ...booking,
-    ...extra
-  };
+  for (const relPath of candidates) {
+    const fullPath = path.resolve(__dirname, relPath);
+    if (fs.existsSync(fullPath)) {
+      const mod = await import(pathToFileURL(fullPath).href);
+      if (typeof mod.publishUserEvent === 'function') {
+        return mod.publishUserEvent;
+      }
+    }
+  }
 
-  await publishUserEvent(
-    io,
-    booking.userId,
-    event,
-    payload,
-    [
-      `resource:${booking.resourceId}`,
-      `booking:${booking.id}`
-    ]
-  );
-}
-
-// Отримання бронювань із пагінацією
-export async function getBookings(req, res, next) {
-  try {
-    // Отримуємо параметри пагінації
-    const page = Number(req.query.page ?? 1);
-    const requestedLimit = Number(req.query.limit ?? 10);
-
-    if (
-    !Number.isInteger(page) ||
-    page < 1 ||
-    !Number.isInteger(requestedLimit) ||
-    requestedLimit < 1
-    ) {
-    return res.status(400).json({
-    message: "Некоректні параметри пагінації"
+  return async (userId, eventName, payload) => {
+    if (prisma.userEvent?.create) {
+      await prisma.userEvent.create({
+        data: {
+          userId,
+          event: eventName,
+          payload: JSON.parse(JSON.stringify(payload)),
+        },
       });
     }
+  };
+};
 
-    const limit = Math.min(requestedLimit, 100);
+const publishUserEvent = await loadPublishUserEvent();
 
+const parseId = (rawId) => {
+  const str = String(rawId).trim();
+  if (!/^[1-9]\d*$/.test(str)) {
+    const err = new Error('Некоректний ідентифікатор');
+    err.statusCode = 400;
+    throw err;
+  }
+  return Number(str);
+};
+
+const getAuthenticatedUserId = (req) => {
+  const rawUserId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
+  if (rawUserId === undefined || rawUserId === null) {
+    const err = new Error('Не вдалося визначити ідентифікатор користувача з токена авторизації');
+    err.statusCode = 401;
+    throw err;
+  }
+  return parseId(rawUserId);
+};
+
+const ACTIVE_BOOKING_STATUSES = ['PENDING', 'CONFIRMED'];
+
+const validateTimeWindow = (startTime, endTime, { checkPast = true } = {}) => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    const err = new Error('Некоректний формат дати початку або завершення бронювання');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (end <= start) {
+    const err = new Error('Час завершення бронювання має бути пізнішим за час початку');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (checkPast && start < new Date()) {
+    const err = new Error('Неможливо створити бронювання на час у минулому');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return { start, end };
+};
+
+export const getBookings = async (req, res, next) => {
+  try {
+    const currentUserId = getAuthenticatedUserId(req);
+
+    if (req.query.page !== undefined) {
+      const parsedPage = Number(req.query.page);
+      if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+        return res.status(400).json({
+          error: 'Параметр page має бути цілим числом не менше 1',
+          message: 'Параметр page має бути цілим числом не менше 1',
+        });
+      }
+    }
+
+    if (req.query.limit !== undefined) {
+      const parsedLimit = Number(req.query.limit);
+      if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
+        return res.status(400).json({
+          error: 'Параметр limit має бути цілим числом не менше 1',
+          message: 'Параметр limit має бути цілим числом не менше 1',
+        });
+      }
+    }
+
+    const page = req.query.page !== undefined ? Number(req.query.page) : 1;
+    const limit = req.query.limit !== undefined ? Math.min(100, Number(req.query.limit)) : 10;
     const skip = (page - 1) * limit;
 
-    // Адміністратор бачить усі бронювання,
-    // звичайний користувач — лише власні
-    const where = req.user.role === "ADMIN"
-      ? {}
-      : { userId: req.user.userId };
+    const where = req.user.role === 'ADMIN' ? {} : { userId: currentUserId };
 
-    // Отримуємо дані та загальну кількість записів
-    const [bookings, total] = await prisma.$transaction([
+    if (req.query.status) {
+      where.status = req.query.status;
+    }
+    if (req.query.resourceId) {
+      where.resourceId = parseId(req.query.resourceId);
+    }
+
+    const [bookings, total] = await Promise.all([
       prisma.booking.findMany({
         where,
-        select: {
-          id: true,
-          userId: true,
-          resourceId: true,
-          startTime: true,
-          endTime: true,
-          status: true,
-          createdAt: true,
-
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          },
-
-          resource: {
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              location: true,
-              categoryId: true
-            }
-          }
-        },
-        orderBy: {
-          createdAt: "desc"
-        },
         skip,
-        take: limit
+        take: limit,
+        orderBy: { startTime: 'desc' },
+        include: {
+          resource: {
+            include: { category: true },
+          },
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
       }),
-
-      prisma.booking.count({ where })
+      prisma.booking.count({ where }),
     ]);
 
-    res.json({
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    return res.status(200).json({
       data: bookings,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page * limit < total,
-        hasPreviousPage: page > 1
-      }
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
-
-// Отримання бронювання за ID
-export async function getBookingById(req, res, next) {
+export const getBookingById = async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-
-    if (!Number.isInteger(id) || id < 1) {
-      return res.status(400).json({
-        message: "Некоректний ID бронювання"
-      });
-    }
-
+    const currentUserId = getAuthenticatedUserId(req);
+    const id = parseId(req.params.id);
     const booking = await prisma.booking.findUnique({
       where: { id },
       include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
-        },
-        resource: true
-      }
+        resource: { include: { category: true } },
+        user: { select: { id: true, name: true, email: true } },
+      },
     });
 
     if (!booking) {
       return res.status(404).json({
-        message: "Бронювання не знайдено"
+        error: 'Бронювання не знайдено',
+        message: 'Бронювання не знайдено',
       });
     }
 
-    if (
-      booking.userId !== req.user.userId &&
-      req.user.role !== "ADMIN"
-    ) {
+    if (req.user.role !== 'ADMIN' && booking.userId !== currentUserId) {
       return res.status(403).json({
-        message: "Немає доступу до цього бронювання"
+        error: 'Доступ до цього бронювання заборонено',
+        message: 'Доступ до цього бронювання заборонено',
       });
     }
 
-    res.json(booking);
-  } catch (error) {
-    next(error);
+    return res.status(200).json(booking);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
-// Створення бронювання
-
-export async function createBooking(req, res, next) {
+export const createBooking = async (req, res, next) => {
   try {
-    const { resourceId, startTime, endTime } = req.body;
-
-    const resource = await prisma.resource.findUnique({
-      where: { id: resourceId }
+    const currentUserId = getAuthenticatedUserId(req);
+    const resourceId = parseId(req.body.resourceId);
+    const { start, end } = validateTimeWindow(req.body.startTime, req.body.endTime, {
+      checkPast: true,
     });
 
-    if (!resource) {
-      return res.status(404).json({
-        message: "Ресурс не знайдено"
+    const booking = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`booking_resource_${resourceId}`}))`;
+
+      const resource = await tx.resource.findUnique({
+        where: { id: resourceId },
+      });
+
+      if (!resource) {
+        const err = new Error('Ресурс для бронювання не знайдено');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const conflictingBooking = await tx.booking.findFirst({
+        where: {
+          resourceId,
+          status: { in: ACTIVE_BOOKING_STATUSES },
+          startTime: { lt: end },
+          endTime: { gt: start },
+        },
+      });
+
+      if (conflictingBooking) {
+        const err = new Error('Обраний часовий слот уже зайнятий');
+        err.statusCode = 409;
+        throw err;
+      }
+
+      return tx.booking.create({
+        data: {
+          userId: currentUserId,
+          resourceId,
+          startTime: start,
+          endTime: end,
+          status: 'PENDING',
+        },
+        include: {
+          resource: { include: { category: true } },
+        },
+      });
+    });
+
+    await publishUserEvent(currentUserId, 'booking:created', booking).catch(() => {});
+
+    return res.status(201).json(booking);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+export const updateBooking = async (req, res, next) => {
+  try {
+    const currentUserId = getAuthenticatedUserId(req);
+    const id = parseId(req.params.id);
+    const { startTime, endTime, status } = req.body;
+
+    if (status !== undefined && req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Змінювати статус бронювання може лише адміністратор',
+        message: 'Змінювати статус бронювання може лише адміністратор',
       });
     }
 
-    const conflict = await prisma.booking.findFirst({
-      where: {
-        resourceId,
-        status: {
-          in: ["PENDING", "CONFIRMED"]
-        },
-        startTime: {
-          lt: endTime
-        },
-        endTime: {
-          gt: startTime
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+      const existing = await tx.booking.findUnique({ where: { id } });
+
+      if (!existing) {
+        const err = new Error('Бронювання не знайдено');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (req.user.role !== 'ADMIN' && existing.userId !== currentUserId) {
+        const err = new Error('Недостатньо прав для зміни цього бронювання');
+        err.statusCode = 403;
+        throw err;
+      }
+
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`booking_resource_${existing.resourceId}`}))`;
+
+      const nextStatus = status ?? existing.status;
+      const isTimeChanged = startTime !== undefined || endTime !== undefined;
+
+      const { start, end } = validateTimeWindow(
+        startTime ?? existing.startTime,
+        endTime ?? existing.endTime,
+        { checkPast: isTimeChanged }
+      );
+
+      if (ACTIVE_BOOKING_STATUSES.includes(nextStatus)) {
+        const conflict = await tx.booking.findFirst({
+          where: {
+            id: { not: id },
+            resourceId: existing.resourceId,
+            status: { in: ACTIVE_BOOKING_STATUSES },
+            startTime: { lt: end },
+            endTime: { gt: start },
+          },
+        });
+
+        if (conflict) {
+          const err = new Error('Оновлений часовий інтервал перетинається з іншим бронюванням');
+          err.statusCode = 409;
+          throw err;
         }
       }
-    });
 
-    if (conflict) {
-      return res.status(409).json({
-        message: "Цей ресурс уже заброньований на вказаний час"
-      });
-    }
-
-    const booking = await prisma.booking.create({
-      data: {
-        userId: req.user.userId,
-        resourceId,
-        startTime,
-        endTime
-      }
-    });
-
-    // Повідомляємо всіх зацікавлених у ресурсі користувачів
-    await emitBookingEvent(req, booking, "booking:created");
-
-    res.status(201).json(booking);
-  } catch (error) {
-    next(error);
-  }
-}
-
-
-// Оновлення бронювання
-export async function updateBooking(req, res, next) {
-  try {
-    const id = Number(req.params.id);
-
-    if (!Number.isInteger(id) || id < 1) {
-      return res.status(400).json({
-        message: "Некоректний ID бронювання"
-      });
-    }
-
-    const existing = await prisma.booking.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      return res.status(404).json({
-        message: "Бронювання не знайдено"
-      });
-    }
-
-    const isAdmin = req.user.role === "ADMIN";
-
-    if (existing.userId !== req.user.userId && !isAdmin) {
-      return res.status(403).json({
-        message: "Немає прав для зміни цього бронювання"
-      });
-    }
-
-    if (req.body.status && !isAdmin) {
-      return res.status(403).json({
-        message: "Змінювати статус бронювання може лише адміністратор"
-      });
-    }
-
-    const startTime = req.body.startTime ?? existing.startTime;
-    const endTime = req.body.endTime ?? existing.endTime;
-
-    if (new Date(startTime) >= new Date(endTime)) {
-      return res.status(400).json({
-        message: "Дата завершення повинна бути пізніше дати початку"
-      });
-    }
-
-    const conflict = await prisma.booking.findFirst({
-      where: {
-        id: { not: id },
-        resourceId: existing.resourceId,
-        status: {
-          in: ["PENDING", "CONFIRMED"]
+      return tx.booking.update({
+        where: { id },
+        data: {
+          startTime: start,
+          endTime: end,
+          status: nextStatus,
         },
-        startTime: { lt: endTime },
-        endTime: { gt: startTime }
-      }
-    });
-
-    if (conflict) {
-      return res.status(409).json({
-        message: "На цей час ресурс уже заброньований"
+        include: {
+          resource: { include: { category: true } },
+        },
       });
-    }
-
-    const booking = await prisma.booking.update({
-      where: { id },
-      data: {
-        ...(req.body.startTime && { startTime }),
-        ...(req.body.endTime && { endTime }),
-        ...(isAdmin && req.body.status && { status: req.body.status })
-      }
     });
 
-    // Якщо адміністратор скасував бронювання
-    if (booking.status === "CANCELLED" &&
-        existing.status !== "CANCELLED") {
-      await emitBookingEvent(req, booking, "booking:cancelled");
-    } else {
-      await emitBookingEvent(req, booking, "booking:updated");
-    }
+    await publishUserEvent(updatedBooking.userId, 'booking:updated', updatedBooking).catch(
+      () => {}
+    );
 
-    res.json(booking);
-  } catch (error) {
-    next(error);
+    return res.status(200).json(updatedBooking);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
-// Видалення бронювання
-
-export async function deleteBooking(req, res, next) {
+export const cancelBooking = async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-
-    if (!Number.isInteger(id) || id < 1) {
-      return res.status(400).json({
-        message: "Некоректний ID бронювання"
-      });
-    }
-
-    const existing = await prisma.booking.findUnique({
-      where: { id }
-    });
+    const currentUserId = getAuthenticatedUserId(req);
+    const id = parseId(req.params.id);
+    const existing = await prisma.booking.findUnique({ where: { id } });
 
     if (!existing) {
       return res.status(404).json({
-        message: "Бронювання не знайдено"
+        error: 'Бронювання не знайдено',
+        message: 'Бронювання не знайдено',
       });
     }
 
-    if (
-      existing.userId !== req.user.userId &&
-      req.user.role !== "ADMIN"
-    ) {
+    if (req.user.role !== 'ADMIN' && existing.userId !== currentUserId) {
       return res.status(403).json({
-        message: "Немає прав для видалення цього бронювання"
+        error: 'Недостатньо прав для скасування цього бронювання',
+        message: 'Недостатньо прав для скасування цього бронювання',
       });
     }
 
-    await prisma.booking.delete({
-      where: { id }
+    const cancelled = await prisma.booking.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
     });
 
-    // Повідомляємо клієнтів після успішного видалення
-    await emitBookingEvent(req, existing, "booking:cancelled", {
-      deleted: true
-    });
-
-    res.json({
-      message: "Бронювання успішно видалено"
-    });
-  } catch (error) {
-    next(error);
+    return res.status(200).json(cancelled);
+  } catch (err) {
+    return next(err);
   }
-}
+};
 
+export const deleteBooking = cancelBooking;
+export const getAllBookings = getBookings;
+export const getMyBookings = getBookings;
+export const updateBookingStatus = updateBooking;
