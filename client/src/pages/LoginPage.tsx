@@ -1,122 +1,92 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { authService, extractApiErrorMessage } from '../services/api';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { LogIn } from 'lucide-react';
+import Button from '@/components/common/Button';
+import ErrorAlert from '@/components/common/ErrorAlert';
+import Input from '@/components/common/Input';
+import { loginSchema, type LoginFormValues } from '@/schemas/validation';
+import { useAuthStore } from '@/stores/authStore';
+import { useToast } from '@/stores/uiStore';
 
-export const LoginPage: React.FC = () => {
+export default function LoginPage() {
   const navigate = useNavigate();
-  const [isRegister, setIsRegister] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const login = useAuthStore((s) => s.login);
+  const error = useAuthStore((s) => s.error);
+  const clearError = useAuthStore((s) => s.clearError);
+  const toast = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
+  const from =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/dashboard';
 
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  });
+
+  const onSubmit = async (values: LoginFormValues) => {
     try {
-      if (isRegister) {
-        await authService.register(name, email, password);
-      } else {
-        await authService.login(email, password);
-      }
-      navigate('/', { replace: true });
-    } catch (err) {
-      setError(extractApiErrorMessage(err));
-    } finally {
-      setLoading(false);
+      await login(values.email, values.password);
+      toast.success('Вхід виконано успішно');
+      navigate(from, { replace: true });
+    } catch {
+      // Помилка вже збережена в authStore
     }
   };
 
   return (
-    <div className="mx-auto mt-12 max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white">
-        {isRegister ? 'Реєстрація в BookingSystem' : 'Вхід у систему'}
-      </h1>
-      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
-        {isRegister
-          ? 'Створіть обліковий запис для бронювання ресурсів'
-          : 'Увійдіть, щоб керувати своїми бронюваннями'}
-      </p>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-300">
-          {error}
+    <div className="mx-auto my-10 max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-6 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100 text-primary-600 dark:bg-primary-950 dark:text-primary-400">
+          <LogIn className="h-5 w-5" />
         </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {isRegister && (
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-              Імʼя
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Олександр Коваленко"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-slate-900 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            />
-          </div>
-        )}
-
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Email
-          </label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="user@example.com"
-            className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-slate-900 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          />
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Вхід у систему</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Авторизуйтесь для доступу до панелі керування
+          </p>
         </div>
+      </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Пароль
-          </label>
-          <input
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-slate-900 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          />
-        </div>
+      <ErrorAlert message={error} onDismiss={clearError} className="mb-5" />
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? 'Завантаження...' : isRegister ? 'Зареєструватися' : 'Увійти'}
-        </button>
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+        <Input
+          label="Електронна пошта"
+          type="email"
+          placeholder="user@example.com"
+          error={errors.email?.message}
+          {...register('email')}
+        />
+
+        <Input
+          label="Пароль"
+          type="password"
+          placeholder="••••••••"
+          error={errors.password?.message}
+          {...register('password')}
+        />
+
+        <Button type="submit" isLoading={isSubmitting} className="w-full">
+          Увійти
+        </Button>
       </form>
 
-      <div className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
-        {isRegister ? 'Вже маєте акаунт?' : 'Ще немає облікового запису?'}{' '}
-        <button
-          type="button"
-          onClick={() => {
-            setIsRegister((prev) => !prev);
-            setError(null);
-          }}
-          className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+      <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
+        Ще не маєте облікового запису?{' '}
+        <Link
+          to="/register"
+          onClick={clearError}
+          className="font-semibold text-primary-600 hover:underline dark:text-primary-400"
         >
-          {isRegister ? 'Увійти' : 'Зареєструватися'}
-        </button>
-      </div>
+          Зареєструватися
+        </Link>
+      </p>
     </div>
   );
-};
-
-export default LoginPage;
+}

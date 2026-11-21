@@ -1,22 +1,22 @@
-import { Link } from 'react-router';
+import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '@/constants/config';
 
 export default function Footer() {
   return (
-    <footer className="border-t border-gray-200 bg-gray-50 py-8 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-      <div className="container mx-auto flex flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
+    <footer className="border-t border-slate-200 bg-white py-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
         <p>
           © {new Date().getFullYear()} {APP_CONFIG.name}. Усі права захищено.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          <a href={`mailto:${APP_CONFIG.contactEmail}`} className="hover:text-primary-600">
-            {APP_CONFIG.contactEmail}
-          </a>
-          <span>•</span>
-          <span>{APP_CONFIG.contactPhone}</span>
-          <span>•</span>
-          <Link to="/about" className="hover:text-primary-600">
-            Про проєкт
+        <div className="flex gap-6">
+          <Link to="/" className="transition hover:text-primary-600 dark:hover:text-primary-400">
+            Каталог
+          </Link>
+          <Link
+            to="/about"
+            className="transition hover:text-primary-600 dark:hover:text-primary-400"
+          >
+            Про систему
           </Link>
         </div>
       </div>

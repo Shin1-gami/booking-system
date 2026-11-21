@@ -1,33 +1,49 @@
-import type { BookingStatus } from '@/types';
+import type { BookingStatus, ResourceStatus } from '@/types';
 
-export function formatDate(iso: string, locale = 'uk-UA'): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(new Date(iso));
+export function formatCurrency(value: number | string | null | undefined): string {
+  const num = Number(value ?? 0);
+  if (Number.isNaN(num)) return '0.00 ₴';
+  return `${num.toFixed(2)} ₴`;
 }
 
-export function formatDateTime(iso: string, locale = 'uk-UA'): string {
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(iso));
+export function formatDateTime(isoString: string | null | undefined): string {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('uk-UA', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
-export function formatPrice(value: number, currency = 'UAH', locale = 'uk-UA'): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(value);
+export function toDateTimeLocalValue(isoString: string | null | undefined): string {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
 }
 
-export function getBookingStatusMeta(status: BookingStatus): {
-  label: string;
-  variant: 'warning' | 'success' | 'danger' | 'neutral';
-} {
-  const map: Record<BookingStatus, { label: string; variant: 'warning' | 'success' | 'danger' | 'neutral' }> = {
-    PENDING: { label: 'Очікує підтвердження', variant: 'warning' },
-    CONFIRMED: { label: 'Підтверджено', variant: 'success' },
-    CANCELLED: { label: 'Скасовано', variant: 'danger' },
-    COMPLETED: { label: 'Завершено', variant: 'neutral' },
-  };
-  return map[status];
-}
+export const RESOURCE_STATUS_META: Record<
+  ResourceStatus,
+  { label: string; variant: 'success' | 'warning' | 'danger' }
+> = {
+  AVAILABLE: { label: 'Доступний', variant: 'success' },
+  MAINTENANCE: { label: 'Обслуговування', variant: 'warning' },
+  UNAVAILABLE: { label: 'Недоступний', variant: 'danger' },
+};
+
+export const BOOKING_STATUS_META: Record<
+  BookingStatus,
+  { label: string; variant: 'warning' | 'success' | 'danger' | 'info' }
+> = {
+  PENDING: { label: 'Очікує підтвердження', variant: 'warning' },
+  CONFIRMED: { label: 'Підтверджено', variant: 'success' },
+  CANCELLED: { label: 'Скасовано', variant: 'danger' },
+  COMPLETED: { label: 'Завершено', variant: 'info' },
+};

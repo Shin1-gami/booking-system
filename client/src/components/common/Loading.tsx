@@ -1,3 +1,5 @@
+import { Loader2 } from 'lucide-react';
+
 interface LoadingProps {
   text?: string;
   size?: 'sm' | 'md' | 'lg';
@@ -5,9 +7,9 @@ interface LoadingProps {
 }
 
 const spinnerSizes = {
-  sm: 'h-5 w-5 border-2',
-  md: 'h-8 w-8 border-3',
-  lg: 'h-12 w-12 border-4',
+  sm: 'h-5 w-5',
+  md: 'h-8 w-8',
+  lg: 'h-12 w-12',
 };
 
 export default function Loading({
@@ -17,14 +19,12 @@ export default function Loading({
 }: LoadingProps) {
   const containerClass = fullScreen
     ? 'flex min-h-[60vh] flex-col items-center justify-center gap-3'
-    : 'flex flex-col items-center justify-center gap-2 py-8';
+    : 'flex flex-col items-center justify-center gap-2.5 py-10';
 
   return (
     <div role="status" aria-live="polite" className={containerClass}>
-      <div
-        className={`animate-spin rounded-full border-primary-600 border-t-transparent ${spinnerSizes[size]}`}
-      />
-      {text && <p className="text-sm text-gray-600 dark:text-gray-400">{text}</p>}
+      <Loader2 className={`animate-spin text-primary-600 dark:text-primary-400 ${spinnerSizes[size]}`} />
+      {text && <p className="text-sm font-medium text-slate-600 dark:text-slate-400">{text}</p>}
     </div>
   );
 }
