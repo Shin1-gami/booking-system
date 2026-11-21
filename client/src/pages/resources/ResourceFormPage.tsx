@@ -1,13 +1,14 @@
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { lazy, Suspense, useEffect } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import Breadcrumbs from '@/components/common/Breadcrumbs';
 import Button from '@/components/common/Button';
 import ErrorAlert from '@/components/common/ErrorAlert';
-import Input, { Select, Textarea } from '@/components/common/Input';
+import Input, { Select } from '@/components/common/Input';
 import Loading from '@/components/common/Loading';
+import SearchableSelect from '@/components/common/SearchableSelect';
 import { useFlatCategoriesQuery } from '@/hooks/queries/useCategories';
 import {
   useCreateResourceMutation,
@@ -16,6 +17,9 @@ import {
 } from '@/hooks/queries/useResources';
 import { resourceSchema, type ResourceFormValues } from '@/schemas/validation';
 import { extractApiErrorMessage } from '@/services/api';
+
+const RichTextEditor = lazy(() => import('@/components/interactive/RichTextEditor'));
+const ImageCropUploader = lazy(() => import('@/components/interactive/ImageCropUploader'));
 
 export default function ResourceFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +33,7 @@ export default function ResourceFormPage() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -59,13 +64,15 @@ export default function ResourceFormPage() {
       });
     }
   }, [isEditMode, resourceQuery.data, reset]);
-const onSubmit = async (values: ResourceFormValues) => {
+
+  const onSubmit = async (values: ResourceFormValues) => {
+    const plainDescription = values.description?.replace(/<[^>]+>/g, '').trim();
     const payload = {
       name: values.name,
       location: values.location,
       price: Number(values.price),
       categoryId: Number(values.categoryId),
-      ...(values.description ? { description: values.description } : {}),
+      ...(plainDescription ? { description: plainDescription } : {}),
     };
 
     if (isEditMode && id) {
@@ -82,6 +89,13 @@ const onSubmit = async (values: ResourceFormValues) => {
 
   const mutationError = createMutation.error || updateMutation.error || resourceQuery.error;
   const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  const categoryOptions = (categoriesQuery.data ?? []).map((cat) => ({
+    value: String(cat.id),
+    label: cat.name,
+    subtitle: cat._count?.resources !== undefined ? `Ресурсів: ${cat._count.resources}` : undefined,
+  }));
+
   return (
     <div className="mx-auto max-w-2xl">
       <Breadcrumbs
@@ -121,18 +135,20 @@ const onSubmit = async (values: ResourceFormValues) => {
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Select
-            label="Категорія"
-            error={errors.categoryId?.message}
-            {...register('categoryId')}
-          >
-            <option value="">Без категорії</option>
-            {categoriesQuery.data?.map((cat) => (
-              <option key={cat.id} value={String(cat.id)}>
-                {cat.name}
-              </option>
-            ))}
-          </Select>
+          <Controller
+            name="categoryId"
+            control={control}
+            render={({ field }) => (
+              <SearchableSelect
+                label="Категорія *"
+                options={categoryOptions}
+                value={field.value}
+                onChange={field.onChange}
+                placeholder="Пошук категорії..."
+                error={errors.categoryId?.message}
+              />
+            )}
+          />
 
           <Select label="Статус доступності" error={errors.status?.message} {...register('status')}>
             <option value="AVAILABLE">Доступний</option>
@@ -165,19 +181,30 @@ const onSubmit = async (values: ResourceFormValues) => {
         </div>
 
         <Input
-          label="Локація / Адреса"
+          label="Локація / Адреса *"
           placeholder="Корпус А, 3-й поверх, ауд. 305"
           error={errors.location?.message}
           {...register('location')}
         />
 
-        <Textarea
-          label="Опис ресурсу"
-          rows={4}
-          placeholder="Детальний опис обладнання, умов користування тощо..."
-          error={errors.description?.message}
-          {...register('description')}
-        />
+        <Suspense fallback={<Loading text="Завантаження редактора..." />}>
+          <Controller
+            name="description"
+            control={control}
+            render={({ field }) => (
+              <RichTextEditor
+                label="Опис ресурсу"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                error={errors.description?.message}
+              />
+            )}
+          />
+        </Suspense>
+
+        <Suspense fallback={<Loading text="Завантаження модуля зображень..." />}>
+          <ImageCropUploader />
+        </Suspense>
 
         <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
           <Link to="/dashboard/resources">

@@ -22,8 +22,13 @@ const authorize = authMiddleware.authorize || authMiddleware.requireRole;
 
 const app = express();
 
+
+
 // 1. Базові заголовки безпеки та обмеження CORS
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+const rawOrigins = [process.env.CLIENT_URL, process.env.FRONTEND_URL]
+  .filter(Boolean)
+  .join(',');
+const allowedOrigins = (rawOrigins || 'http://localhost:5173')
   .split(',')
   .map((origin) => origin.trim());
 

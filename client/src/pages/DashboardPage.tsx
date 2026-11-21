@@ -1,35 +1,81 @@
+import { lazy, Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  BarChart3,
   Boxes,
   CalendarCheck2,
+  CalendarDays,
   Clock,
   FolderKanban,
+  Infinity as InfinityIcon,
+  ListTodo,
   Plus,
 } from 'lucide-react';
 import Badge from '@/components/common/Badge';
 import Breadcrumbs from '@/components/common/Breadcrumbs';
 import Button from '@/components/common/Button';
 import ErrorAlert from '@/components/common/ErrorAlert';
+import Loading from '@/components/common/Loading';
+import OnlineStatusBadge from '@/components/common/OnlineStatusBadge';
 import { Skeleton } from '@/components/common/Skeleton';
+import Tabs from '@/components/common/Tabs';
+import TaskBoard from '@/components/interactive/TaskBoard';
 import { useBookingsQuery } from '@/hooks/queries/useBookings';
 import { useCategoriesQuery } from '@/hooks/queries/useCategories';
 import { useResourcesQuery } from '@/hooks/queries/useResources';
+import { useDocumentMeta } from '@/hooks/useDocumentMeta';
 import { extractApiErrorMessage } from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { BOOKING_STATUS_META, formatCurrency, formatDateTime } from '@/utils/format';
 
+// Відкладене завантаження важких візуальних модулів (Recharts, DayPicker, InfiniteScroll)
+const StatsChart = lazy(() => import('@/components/interactive/StatsChart'));
+const BookingCalendar = lazy(() => import('@/components/interactive/BookingCalendar'));
+const InfiniteResourcesFeed = lazy(() => import('@/components/interactive/InfiniteResourcesFeed'));
+
 export default function DashboardPage() {
+  useDocumentMeta('Панель керування — BookingSystem', 'Аналітика, графіки, календар та управління бронюваннями');
+
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'ADMIN';
 
-  const resourcesQuery = useResourcesQuery({ page: 1, limit: 5 });
-  const bookingsQuery = useBookingsQuery({ page: 1, limit: 5 });
-  const categoriesQuery = useCategoriesQuery({ page: 1, limit: 5 });
+  const resourcesQuery = useResourcesQuery({ page: 1, limit: 50 });
+  const bookingsQuery = useBookingsQuery({ page: 1, limit: 50 });
+  const categoriesQuery = useCategoriesQuery({ page: 1, limit: 50 });
 
   const isLoading =
     resourcesQuery.isLoading || bookingsQuery.isLoading || categoriesQuery.isLoading;
   const queryError = resourcesQuery.error || bookingsQuery.error || categoriesQuery.error;
+
+  const bookingsByStatusChart = useMemo(() => {
+    const list = bookingsQuery.data?.data ?? [];
+    const counts: Record<string, number> = {
+      PENDING: 0,
+      CONFIRMED: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+    };
+    list.forEach((b) => {
+      counts[b.status] = (counts[b.status] ?? 0) + 1;
+    });
+    return [
+      { name: 'Очікують', value: counts.PENDING },
+      { name: 'Підтверджені', value: counts.CONFIRMED },
+      { name: 'Завершені', value: counts.COMPLETED },
+      { name: 'Скасовані', value: counts.CANCELLED },
+    ];
+  }, [bookingsQuery.data?.data]);
+
+  const resourcesByCategoryChart = useMemo(() => {
+    const categories = categoriesQuery.data?.data ?? [];
+    return categories.map((cat) => ({
+      name: cat.name,
+      value:
+        cat._count?.resources ??
+        (resourcesQuery.data?.data ?? []).filter((r) => String(r.categoryId) === String(cat.id)).length,
+    }));
+  }, [categoriesQuery.data?.data, resourcesQuery.data?.data]);
 
   const stats = [
     {
@@ -65,7 +111,7 @@ export default function DashboardPage() {
             Вітаємо, {user?.name ?? 'користувачу'}!
           </h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Огляд ресурсів, активних бронювань та швидкий доступ до основних розділів
+            Огляд ресурсів, реальна статистика бронювань та інтерактивні інструменти планування
           </p>
         </div>
 
@@ -99,7 +145,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Картки статистики */}
+      {/* Картки ключових показників */}
       <div className="mb-8 grid gap-5 sm:grid-cols-3">
         {stats.map((stat) => {
           const Icon = stat.icon;
@@ -130,6 +176,66 @@ export default function DashboardPage() {
         })}
       </div>
 
+      {/* Організація контенту через таби Headless UI */}
+      <Tabs
+        className="mb-8"
+        items={[
+          {
+            id: 'analytics',
+            label: 'Аналітика та графіки',
+            icon: <BarChart3 className="h-4 w-4" />,
+            content: (
+              <Suspense fallback={<Loading text="Завантаження графіків..." />}>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <StatsChart
+                    title="Динаміка бронювань за статусами"
+                    subtitle="Актуальний розподіл заявок у системі"
+                    data={bookingsByStatusChart}
+                    variant="area"
+                    valueLabel="Бронювань"
+                  />
+                  <StatsChart
+                    title="Ресурси за категоріями"
+                    subtitle="Кількість доступних локацій та обладнання"
+                    data={resourcesByCategoryChart}
+                    variant="bar"
+                    valueLabel="Ресурсів"
+                    color="#10b981"
+                  />
+                </div>
+              </Suspense>
+            ),
+          },
+          {
+            id: 'tasks',
+            label: 'Планувальник (Drag & Drop)',
+            icon: <ListTodo className="h-4 w-4" />,
+            content: <TaskBoard />,
+          },
+          {
+            id: 'calendar',
+            label: 'Календар бронювань',
+            icon: <CalendarDays className="h-4 w-4" />,
+            badge: bookingsQuery.data?.pagination.total ?? 0,
+            content: (
+              <Suspense fallback={<Loading text="Завантаження календаря..." />}>
+                <BookingCalendar bookings={bookingsQuery.data?.data ?? []} />
+              </Suspense>
+            ),
+          },
+          {
+            id: 'infinite-feed',
+            label: 'Стрічка ресурсів (Infinite Scroll)',
+            icon: <InfinityIcon className="h-4 w-4" />,
+            content: (
+              <Suspense fallback={<Loading text="Завантаження каталогу..." />}>
+                <InfiniteResourcesFeed />
+              </Suspense>
+            ),
+          },
+        ]}
+      />
+
       {/* Останні бронювання та доступні ресурси */}
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -157,7 +263,7 @@ export default function DashboardPage() {
             </p>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {bookingsQuery.data?.data.map((booking) => {
+              {bookingsQuery.data?.data.slice(0, 5).map((booking) => {
                 const statusMeta = BOOKING_STATUS_META[booking.status] ?? {
                   label: booking.status,
                   variant: 'neutral' as const,
@@ -169,9 +275,12 @@ export default function DashboardPage() {
                     className="flex items-center justify-between gap-3 py-3 transition hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-                        {booking.resource?.name ?? `Ресурс #${booking.resourceId}`}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                          {booking.resource?.name ?? `Ресурс #${booking.resourceId}`}
+                        </p>
+                        {booking.userId && <OnlineStatusBadge userId={booking.userId} showLabel={false} />}
+                      </div>
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                         <Clock className="h-3 w-3" />
                         <span>{formatDateTime(booking.startTime)}</span>
@@ -210,7 +319,7 @@ export default function DashboardPage() {
             </p>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {resourcesQuery.data?.data.map((resource) => (
+              {resourcesQuery.data?.data.slice(0, 5).map((resource) => (
                 <Link
                   key={resource.id}
                   to={`/dashboard/resources/${resource.id}`}

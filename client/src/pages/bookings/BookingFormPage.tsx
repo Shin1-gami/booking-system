@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
@@ -8,6 +8,7 @@ import Button from '@/components/common/Button';
 import ErrorAlert from '@/components/common/ErrorAlert';
 import Input, { Select, Textarea } from '@/components/common/Input';
 import Loading from '@/components/common/Loading';
+import SearchableSelect from '@/components/common/SearchableSelect';
 import {
   useBookingQuery,
   useCreateBookingMutation,
@@ -34,6 +35,7 @@ export default function BookingFormPage() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -88,6 +90,12 @@ export default function BookingFormPage() {
   const mutationError = createMutation.error || updateMutation.error || bookingQuery.error;
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
+  const resourceOptions = (resourcesQuery.data?.data ?? []).map((res) => ({
+    value: String(res.id),
+    label: `${res.name} (${formatCurrency(res.price)}/год)`,
+    subtitle: res.location ?? res.category?.name ?? undefined,
+  }));
+
   return (
     <div className="mx-auto max-w-2xl">
       <Breadcrumbs
@@ -119,20 +127,21 @@ export default function BookingFormPage() {
         noValidate
         className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900"
       >
-      <Select
-          label="Ресурс для бронювання *"
-          className={isEditMode ? 'pointer-events-none opacity-60' : ''}
-          tabIndex={isEditMode ? -1 : undefined}
-          error={errors.resourceId?.message}
-          {...register('resourceId')}
-        >
-          <option value="">-- Оберіть ресурс --</option>
-          {resourcesQuery.data?.data.map((res) => (
-            <option key={res.id} value={String(res.id)}>
-              {res.name} ({formatCurrency(res.price)}/год)
-            </option>
-          ))}
-        </Select>
+        <Controller
+          name="resourceId"
+          control={control}
+          render={({ field }) => (
+            <SearchableSelect
+              label="Ресурс для бронювання *"
+              options={resourceOptions}
+              value={field.value}
+              onChange={field.onChange}
+              disabled={isEditMode}
+              placeholder="Пошук ресурсу за назвою або локацією..."
+              error={errors.resourceId?.message}
+            />
+          )}
+        />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input

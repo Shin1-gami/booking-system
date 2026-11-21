@@ -1,0 +1,71 @@
+name: CI/CD Client
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Лінтинг, тести та збірка клієнта
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - name: Отримання коду репозиторію
+        uses: actions/checkout@v5
+
+      - name: Налаштування Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Встановлення залежностей
+        run: npm ci
+
+      - name: Перевірка ESLint
+        run: npm run lint
+
+      - name: Запуск тестів Vitest
+        run: npm test
+
+      - name: Продуктивна збірка Vite
+        run: npm run build
+
+  deploy:
+    name: Розгортання на Vercel
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Отримання коду репозиторію
+        uses: actions/checkout@v5
+
+      - name: Налаштування Node.js 24
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Встановлення Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Отримання змінних середовища Vercel
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Збірка проєкту для Production
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Публікація збірки на Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

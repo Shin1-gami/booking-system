@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CalendarPlus,
@@ -14,11 +15,19 @@ import Breadcrumbs from '@/components/common/Breadcrumbs';
 import Button from '@/components/common/Button';
 import ConfirmModal from '@/components/common/ConfirmModal';
 import ErrorAlert from '@/components/common/ErrorAlert';
+import OnlineStatusBadge from '@/components/common/OnlineStatusBadge';
 import { DetailsSkeleton } from '@/components/common/Skeleton';
-import { useBookingsQuery } from '@/hooks/queries/useBookings';
-import { useDeleteResourceMutation, useResourceQuery } from '@/hooks/queries/useResources';
+import { bookingKeys, useBookingsQuery } from '@/hooks/queries/useBookings';
+import {
+  resourceKeys,
+  useDeleteResourceMutation,
+  useResourceQuery,
+} from '@/hooks/queries/useResources';
+import { useSocketEvent } from '@/hooks/useSocketEvent';
 import { extractApiErrorMessage } from '@/services/api';
+import { joinResourceRoom, leaveResourceRoom } from '@/services/socket';
 import { useAuthStore } from '@/stores/authStore';
+import { usePresenceStore } from '@/stores/presenceStore';
 import {
   BOOKING_STATUS_META,
   formatCurrency,
@@ -29,7 +38,9 @@ import {
 export default function ResourceDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const isConnected = usePresenceStore((s) => s.isConnected);
   const isAdmin = user?.role === 'ADMIN';
 
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -41,6 +52,26 @@ export default function ResourceDetailsPage() {
     ...(id && { resourceId: id }),
   });
   const deleteMutation = useDeleteResourceMutation();
+
+  // Підключення до Socket.IO-кімнати поточного ресурсу (та повторний вхід після реконекту)
+  useEffect(() => {
+    if (!id || !isConnected) return;
+    joinResourceRoom(id);
+    return () => leaveResourceRoom(id);
+  }, [id, isConnected]);
+
+  const invalidateResourceBookings = () => {
+    queryClient.invalidateQueries({ queryKey: bookingKeys.lists() });
+  };
+
+  useSocketEvent('booking:created', invalidateResourceBookings);
+  useSocketEvent('booking:updated', invalidateResourceBookings);
+  useSocketEvent('booking:cancelled', invalidateResourceBookings);
+  useSocketEvent('resources:changed', () => {
+    if (id) {
+      queryClient.invalidateQueries({ queryKey: resourceKeys.detail(id) });
+    }
+  });
 
   const handleDelete = async () => {
     if (!id) return;
@@ -155,64 +186,4 @@ export default function ResourceDetailsPage() {
               <Users className="h-3.5 w-3.5" />
               Місткість
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-              {resource.capacity ? `${resource.capacity} осіб` : 'Не обмежено'}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Опис ресурсу</h2>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-            {resource.description || 'Детальний опис для цього ресурсу відсутній.'}
-          </p>
-        </div>
-      </div>
-
-      {/* Пов'язані бронювання */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
-          Останні бронювання цього ресурсу
-        </h2>
-
-        {(resourceBookingsQuery.data?.data.length ?? 0) === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Для цього ресурсу ще немає зареєстрованих бронювань.
-          </p>
-        ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {resourceBookingsQuery.data?.data.map((b) => {
-              const bMeta = BOOKING_STATUS_META[b.status];
-              return (
-                <Link
-                  key={b.id}
-                  to={`/dashboard/bookings/${b.id}`}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                >
-                  <div>
-                    <span className="font-medium text-slate-900 dark:text-white">
-                      {formatDateTime(b.startTime)} — {formatDateTime(b.endTime)}
-                    </span>
-                    {b.user && (
-                      <span className="ml-2 text-xs text-slate-500">({b.user.name})</span>
-                    )}
-                  </div>
-                  <Badge variant={bMeta.variant}>{bMeta.label}</Badge>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <ConfirmModal
-        isOpen={isDeleteOpen}
-        title="Видалити ресурс?"
-        description={`Ви впевнені, що хочете видалити ресурс «${resource.name}»?`}
-        isLoading={deleteMutation.isPending}
-        onConfirm={handleDelete}
-        onCancel={() => setIsDeleteOpen(false)}
-      />
-    </div>
-  );
-}
+            <p class

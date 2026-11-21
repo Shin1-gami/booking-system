@@ -1,16 +1,27 @@
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
-import { Loader2, LogOut, Menu, Moon, Sun, UserCircle2 } from 'lucide-react';
+import { Loader2, LogOut, Menu, Moon, Sun, UserCircle2, WifiOff } from 'lucide-react';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
+import OnlineStatusBadge from '@/components/common/OnlineStatusBadge';
+import PageTransition from '@/components/common/PageTransition';
+import NotificationBell from '@/components/NotificationBell';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { useSocketConnection } from '@/hooks/useSocketConnection';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/stores/authStore';
+import { usePresenceStore } from '@/stores/presenceStore';
 import { useToast, useUiStore } from '@/stores/uiStore';
 import Sidebar from './Sidebar';
 
 export default function DashboardLayout() {
+  useSocketConnection();
+
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isFetching = useIsFetching();
+  const isOnlineNetwork = useOnlineStatus();
+  const onlineCount = usePresenceStore((s) => s.onlineUserIds.length);
   const { theme, toggleTheme } = useTheme();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -29,6 +40,16 @@ export default function DashboardLayout() {
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {!isOnlineNetwork && (
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-1.5 text-xs font-semibold text-white"
+          >
+            <WifiOff className="h-3.5 w-3.5" />
+            <span>Ви працюєте в офлайн-режимі. Відображаються кешовані дані.</span>
+          </div>
+        )}
+
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 sm:px-6">
           <div className="flex items-center gap-3">
             <button
@@ -40,6 +61,14 @@ export default function DashboardLayout() {
               <Menu className="h-5 w-5" />
             </button>
 
+            <OnlineStatusBadge userId={user?.id} />
+
+            {onlineCount > 0 && (
+              <span className="hidden rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 md:inline-block">
+                Активних у мережі: {onlineCount}
+              </span>
+            )}
+
             {isFetching > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-950 dark:text-primary-300">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -48,7 +77,9 @@ export default function DashboardLayout() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <NotificationBell />
+
             <button
               type="button"
               onClick={toggleTheme}
@@ -73,7 +104,7 @@ export default function DashboardLayout() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-red-50 hover:border-red-200 hover:text-red-700 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-red-950/40 dark:hover:text-red-300"
             >
               <LogOut className="h-3.5 w-3.5" />
               <span>Вийти</span>
@@ -83,7 +114,9 @@ export default function DashboardLayout() {
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6">
           <ErrorBoundary>
-            <Outlet />
+            <PageTransition routeKey={location.pathname}>
+              <Outlet />
+            </PageTransition>
           </ErrorBoundary>
         </main>
       </div>
